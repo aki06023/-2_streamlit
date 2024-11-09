@@ -12,7 +12,7 @@ model = load_model('lstm_usdjpy_model.h5')
 scaler = MinMaxScaler(feature_range=(0, 1))
 
 def preprocess_and_predict(symbol: str):
-    df = yf.download(symbol, start='2015-01-01', end='2024-08-19')
+    df = yf.download(symbol, start='2015-01-01', end='2024-11-08')
     df.reset_index(inplace=True)
     df = df[['Date', 'Close']]
     df.columns = ['ds', 'y']
