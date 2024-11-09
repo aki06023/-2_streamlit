@@ -8,7 +8,7 @@ from tensorflow.keras.models import load_model
 import plotly.graph_objects as go
 
 # モデルとスケーラーの読み込み
-model = load_model('lstm_usdjpy_model.h5')
+model = load_model('lstm_usdjpy_model (1).h5')
 scaler = MinMaxScaler(feature_range=(0, 1))
 
 def preprocess_and_predict(symbol: str):
