@@ -26,7 +26,7 @@ def preprocess_and_predict(symbol: str):
     look_back = 30
 
     def create_dataset(data, look_back=1):
-        X, Y = []
+        X, Y = [], []  # リストをタプル形式で初期化
         for i in range(len(data) - look_back):
             a = data[i:(i + look_back), 0]
             X.append(a)
