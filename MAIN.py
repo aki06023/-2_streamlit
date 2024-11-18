@@ -6,10 +6,15 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
 from tensorflow.keras.models import load_model
 import plotly.graph_objects as go
+import jpholiday  # 日本の祝日を除外するために使用
 
 # モデルとスケーラーの読み込み
 model = load_model('lstm_usdjpy_model (1).h5')
 scaler = MinMaxScaler(feature_range=(0, 1))
+
+def is_holiday(date):
+    """日本の土日祝日を判定"""
+    return date.weekday() >= 5 or jpholiday.is_holiday(date)
 
 def preprocess_and_predict(symbol: str):
     df = yf.download(symbol, start='2015-01-01', end='2024-11-08')
@@ -21,7 +26,7 @@ def preprocess_and_predict(symbol: str):
     look_back = 30
 
     def create_dataset(data, look_back=1):
-        X, Y = [], []
+        X, Y = []
         for i in range(len(data) - look_back):
             a = data[i:(i + look_back), 0]
             X.append(a)
@@ -35,7 +40,6 @@ def preprocess_and_predict(symbol: str):
     # スコア計算用データ分割
     train_size = int(len(X) * 0.6)
     val_size = int(len(X) * 0.2)
-    test_size = len(X) - train_size - val_size
     trainX, valX, testX = X[:train_size], X[train_size:train_size+val_size], X[train_size+val_size:]
     trainY, valY, testY = y[:train_size], y[train_size:train_size+val_size], y[train_size+val_size:]
 
@@ -68,39 +72,26 @@ def preprocess_and_predict(symbol: str):
 
     future_predictions = scaler.inverse_transform(np.array(future_predictions).reshape(-1, 1))
 
-    last_date = df['ds'].values[-1]
-    future_dates = pd.date_range(start=last_date, periods=len(future_predictions), freq='D')
+    # 土日祝日を除外した日付を生成
+    last_date = pd.to_datetime(df['ds'].iloc[-1])
+    future_dates = []
+    current_date = last_date
+    while len(future_dates) < len(future_predictions):
+        current_date += pd.Timedelta(days=1)
+        if not is_holiday(current_date):
+            future_dates.append(current_date)
 
     actual_data = scaler.inverse_transform(df['y'].values.reshape(-1, 1)).flatten()
 
     # プロットの準備
-    trainPredictPlot = np.empty_like(actual_data)
-    trainPredictPlot[:] = np.nan
-    trainPredictPlot[look_back:train_size+look_back] = trainPredict.flatten()
-
-    valPredictPlot = np.empty_like(actual_data)
-    valPredictPlot[:] = np.nan
-    valPredictPlot[train_size + look_back:train_size + look_back + val_size] = valPredict.flatten()
-
-    testPredictPlot = np.empty_like(actual_data)
-    testPredictPlot[:] = np.nan
-    testPredictPlot[len(actual_data) - test_size:] = testPredict.flatten()
-
-    futurePredictPlot = np.empty(len(future_dates))
-    futurePredictPlot[:] = np.nan
-    futurePredictPlot[:len(future_predictions)] = future_predictions.flatten()
-
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df['ds'], y=actual_data, mode='lines', name='Actual Data', line=dict(color='blue')))
-    fig.add_trace(go.Scatter(x=df['ds'], y=trainPredictPlot, mode='lines', name='Train Prediction', line=dict(color='green')))
-    fig.add_trace(go.Scatter(x=df['ds'], y=valPredictPlot, mode='lines', name='Validation Prediction', line=dict(color='orange')))
-    fig.add_trace(go.Scatter(x=df['ds'], y=testPredictPlot, mode='lines', name='Test Prediction', line=dict(color='red')))
-    fig.add_trace(go.Scatter(x=future_dates, y=futurePredictPlot, mode='lines', name='Future Prediction', line=dict(color='purple')))
-    fig.update_layout(title='Price Prediction using LSTM', xaxis_title='Date', yaxis_title='Price', template='plotly_white')
+    fig.add_trace(go.Scatter(x=future_dates, y=future_predictions.flatten(), mode='lines', name='Future Prediction', line=dict(color='purple')))
+    fig.update_layout(title='Price Prediction (Excluding Holidays)', xaxis_title='Date', yaxis_title='Price', template='plotly_white')
 
     return {
         'future_predictions': future_predictions.flatten().tolist(),
-        'future_dates': future_dates.strftime('%Y-%m-%d').tolist(),
+        'future_dates': [date.strftime('%Y-%m-%d') for date in future_dates],
         'trainScore': trainScore,
         'valScore': valScore,
         'testScore': testScore,
@@ -108,10 +99,10 @@ def preprocess_and_predict(symbol: str):
     }
 
 # Streamlitアプリケーション
-st.title('Predict future prices')
+st.title('Predict Future Prices Excluding Holidays')
 
 # ドロップダウンリストの作成
-symbols = ['USDJPY=X','CADJPY=X','AUDJPY=X','EURJPY=X','GBPJPY=X','EURUSD=X','GBPUSD=X']  # ここにリストを追加
+symbols = ['USDJPY=X', 'CADJPY=X', 'AUDJPY=X', 'EURJPY=X', 'GBPJPY=X', 'EURUSD=X', 'GBPUSD=X']
 symbol = st.selectbox('シンボルを選択してください', symbols)
 
 if symbol:
@@ -125,12 +116,10 @@ if symbol:
     })
     st.write(predictions_df)
 
-    # RMSEスコアを表示
     st.write("### RMSE Scores")
     st.write(f"Train Score: {results['trainScore']:.2f} RMSE")
     st.write(f"Validation Score: {results['valScore']:.2f} RMSE")
     st.write(f"Test Score: {results['testScore']:.2f} RMSE")
 
-    # 予測グラフを表示
     st.write('予測グラフ:')
     st.components.v1.html(results['plot'], height=600)
